@@ -1,14 +1,26 @@
-# Supabase-DB overlay — use when POSTGRES_DSN points at Supabase, so no local
-# Postgres container is needed. Combine with the CloudPanel overlay on the VPS:
+# Supabase-DB overlay — POSTGRES_DSN points at Supabase, so no local Postgres
+# container runs. Combine with the CloudPanel overlay on the VPS:
 #
 #   docker compose -f docker-compose.yml -f docker-compose.cloudpanel.yml \
-#                  -f docker-compose.supabase.yml up -d api redis qdrant
+#                  -f docker-compose.supabase.yml up -d --build api redis qdrant
 #
-# (Note the explicit service list — it keeps the unused postgres service down.)
+# (Explicit service list keeps the unused postgres service down.)
 services:
   api:
+    # Override the base compose's hardcoded local-Postgres DSN with the value
+    # from .env (Supabase). Redis/Qdrant stay on the internal Docker network.
+    environment:
+      POSTGRES_DSN: ${POSTGRES_DSN}
+    # Drop the postgres dependency (base merges it in) so the API doesn't wait
+    # on a container we never start.
     depends_on: !override
       redis:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+
+  # Park the local Postgres behind a profile so a plain `docker compose up`
+  # never starts it — data lives in Supabase.
+  postgres:
+    profiles: ["local-db"]
+
