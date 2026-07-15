@@ -1,0 +1,26 @@
+# CloudPanel overlay — use when the VPS runs CloudPanel (its nginx owns 80/443
+# and proxies your domain to the "App Port" of the Python Site, e.g. 8090):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloudpanel.yml up -d --build
+#
+# The API binds to 127.0.0.1:8090 only (reachable by CloudPanel's nginx, never
+# directly from the internet). Datastores stay on the internal Docker network.
+services:
+  api:
+    ports: !override
+      - "127.0.0.1:8090:8000"
+    volumes:
+      - models_cache:/app/models_cache
+    restart: unless-stopped
+
+  postgres:
+    ports: !override []
+
+  redis:
+    ports: !override []
+
+  qdrant:
+    ports: !override []
+
+volumes:
+  models_cache:

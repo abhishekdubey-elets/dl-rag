@@ -153,10 +153,18 @@ When up: `https://ask.yourdomain.com` serves the chat UI (health badge will show
 models into the persistent `models_cache` volume (one-time, ~1 min).
 
 Because `REQUIRE_AUTH=true`, API calls need the header `X-API-Key: <your key>`.
-The built-in chat UI at `/` calls the API without a key — either keep auth off for
-the UI by leaving `REQUIRE_AUTH=false` on a private deployment, or front the UI
-with Caddy `basic_auth`, or extend the UI to send the key. Simplest for a public
-demo: Caddy basic_auth on `/` + REQUIRE_AUTH=false internally.
+
+**API-only deployment** (no demo chat page): set in `.env`
+
+```ini
+SERVE_UI=false          # "/" is gone; the API and /docs remain
+REQUIRE_AUTH=true       # every /api/* call needs X-API-Key
+CORS_ORIGINS=https://digitallearning.eletsonline.com   # only if a browser frontend will call the API directly
+```
+
+If you keep the demo UI instead: it calls the API without a key, so either leave
+`REQUIRE_AUTH=false` and gate the site with the proxy's basic-auth, or extend the
+UI to send the key.
 
 ---
 

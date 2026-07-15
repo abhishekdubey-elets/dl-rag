@@ -86,10 +86,23 @@ def create_app() -> FastAPI:
     )
     app.add_middleware(RequestContextMiddleware)
 
+    origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+    if origins:
+        from fastapi.middleware.cors import CORSMiddleware
+
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Content-Type", "X-API-Key"],
+            max_age=3600,
+        )
+
     register_exception_handlers(app)
 
     app.include_router(system.router)
-    app.include_router(ui.router)
+    if settings.serve_ui:
+        app.include_router(ui.router)
     prefix = settings.api_prefix
     app.include_router(chat.router, prefix=prefix)
     app.include_router(index.router, prefix=prefix)

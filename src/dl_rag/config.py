@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     port: int = 8000
     workers: int = 1
     api_prefix: str = "/api"
+    # Serve the built-in demo chat page at "/" (disable for API-only deployments).
+    serve_ui: bool = True
+    # Comma-separated origins allowed to call the API from browsers ("" = no CORS).
+    cors_origins: str = ""
 
     # --- Security ---
     api_keys: str = "dev-local-key"
