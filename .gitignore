@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.python-version
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Caches / models
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+models_cache/
+.cache/
+*.log
+
+# Data artifacts
+data/raw/
+data/processed/
+data/crawl/
+*.sqlite
+*.db
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,48 @@
+[
+  {
+    "query": "How has NEP evolved since 2020?",
+    "expected_query_type": "timeline",
+    "expected_keywords": ["NEP", "2020", "implementation"]
+  },
+  {
+    "query": "Compare CBSE and State Board reforms",
+    "expected_query_type": "comparison",
+    "expected_keywords": ["CBSE", "state board"]
+  },
+  {
+    "query": "What is SWAYAM?",
+    "expected_query_type": "definition",
+    "expected_keywords": ["SWAYAM", "online", "courses"]
+  },
+  {
+    "query": "Show interviews featuring AI in education",
+    "expected_query_type": "interview",
+    "expected_keywords": ["AI", "education"]
+  },
+  {
+    "query": "What has digitalLEARNING covered about UGC?",
+    "expected_keywords": ["UGC"]
+  },
+  {
+    "query": "Timeline of SWAYAM platform developments",
+    "expected_query_type": "timeline",
+    "expected_keywords": ["SWAYAM"]
+  },
+  {
+    "query": "Which states have implemented digital classrooms successfully?",
+    "expected_keywords": ["digital classroom", "state"]
+  },
+  {
+    "query": "How has digital learning changed over 20 years?",
+    "expected_query_type": "trend",
+    "expected_keywords": ["digital learning"]
+  },
+  {
+    "query": "What has digitalLEARNING written about IIT Madras?",
+    "expected_keywords": ["IIT Madras"]
+  },
+  {
+    "query": "Top trends in EdTech funding",
+    "expected_keywords": ["edtech", "funding"]
+  }
+]

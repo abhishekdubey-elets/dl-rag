@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install lint tooling
+        run: pip install ruff==0.7.4
+      - name: Ruff check
+        run: ruff check src tests
+      - name: Ruff format --check
+        run: ruff format --check src tests
+      - name: Compile all sources
+        run: python -m compileall -q src
+
+  test:
+    name: Unit & integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dl
+          POSTGRES_PASSWORD: dl
+          POSTGRES_DB: dl_rag
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U dl -d dl_rag"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      qdrant:
+        image: qdrant/qdrant:latest
+        ports: ["6333:6333"]
+    env:
+      POSTGRES_DSN: postgresql+asyncpg://dl:dl@localhost:5432/dl_rag
+      REDIS_URL: redis://localhost:6379/0
+      QDRANT_URL: http://localhost:6333
+      LLM_API_KEY: test-key
+      EMBEDDING_MODEL: BAAI/bge-small-en-v1.5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Poetry
+        run: pipx install poetry==1.8.4
+      - name: Cache Poetry venv
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pypoetry
+          key: poetry-${{ hashFiles('poetry.lock', 'pyproject.toml') }}
+      - name: Install dependencies
+        run: poetry install --with dev
+      - name: Run tests
+        run: poetry run pytest -q --cov=dl_rag --cov-report=term-missing
