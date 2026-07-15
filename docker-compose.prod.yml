@@ -1,0 +1,42 @@
+# Production overlay — run with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Changes vs the dev compose:
+#   * Adds Caddy (ports 80/443, automatic HTTPS) in front of the API.
+#   * Stops exposing Postgres/Redis/Qdrant/API ports to the public internet —
+#     everything talks over the internal Docker network only.
+#   * Persists the HuggingFace model cache so embedder/reranker downloads
+#     survive container rebuilds.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+
+  api:
+    ports: !override []
+    volumes:
+      - models_cache:/app/models_cache
+    restart: unless-stopped
+
+  postgres:
+    ports: !override []
+
+  redis:
+    ports: !override []
+
+  qdrant:
+    ports: !override []
+
+volumes:
+  caddy_data:
+  caddy_config:
+  models_cache:
