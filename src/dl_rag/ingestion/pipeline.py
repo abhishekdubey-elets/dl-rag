@@ -56,6 +56,8 @@ class IngestionPipeline:
         self._chunker = chunker
         self._entities = entity_extractor
         self._collection_ready = False
+        # None = unknown (probe on first use); True/False = column present or not.
+        self._pg_embeddings: bool | None = None
 
     # ------------------------------------------------------------------ #
     async def _ensure_collection(self) -> None:
@@ -67,6 +69,46 @@ class IngestionPipeline:
         except Exception as exc:  # noqa: BLE001 - surfaced, not fatal to the loop
             logger.error("ingest.ensure_collection_failed", error=str(exc))
             raise
+
+    async def _store_pg_embeddings(self, chunks: Sequence) -> None:
+        """Mirror chunk embeddings into ``chunks.embedding`` (pgvector) when present.
+
+        Keeps Postgres a complete, durable copy of the index so Qdrant can be
+        rebuilt from it (``dl-rebuild-qdrant``). Silently skipped on databases
+        without the column (e.g. local postgres images lacking pgvector).
+        """
+        if self._pg_embeddings is False:
+            return
+        rows = [
+            {
+                "id": c.id,
+                "emb": "[" + ",".join(f"{v:.7f}" for v in c.embedding) + "]",
+            }
+            for c in chunks
+            if c.embedding
+        ]
+        if not rows:
+            return
+        from sqlalchemy import text as sqltext
+
+        try:
+            async with self._db.session() as session:
+                if self._pg_embeddings is None:
+                    present = (await session.execute(sqltext(
+                        "SELECT 1 FROM information_schema.columns "
+                        "WHERE table_name='chunks' AND column_name='embedding'"
+                    ))).first() is not None
+                    self._pg_embeddings = present
+                    if not present:
+                        logger.info("ingest.pg_embeddings.disabled")
+                        return
+                await session.execute(
+                    sqltext("UPDATE chunks SET embedding = CAST(:emb AS vector) "
+                            "WHERE id = :id"),
+                    rows,
+                )
+        except Exception as exc:  # noqa: BLE001 - mirror is best-effort
+            logger.warning("ingest.pg_embeddings.failed", error=str(exc)[:150])
 
     async def ingest_document(self, doc: SourceDocument) -> int:
         """Full per-document pipeline. Returns the number of chunks indexed."""
@@ -97,6 +139,7 @@ class IngestionPipeline:
             chunk_repo = ChunkRepository(session)
             await chunk_repo.delete_by_document(doc.id)
             await chunk_repo.bulk_upsert(chunks)
+        await self._store_pg_embeddings(chunks)
 
         # 5. Vectors (Qdrant), replacing any prior points for this document.
         await self._ensure_collection()

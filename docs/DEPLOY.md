@@ -168,6 +168,34 @@ UI to send the key.
 
 ---
 
+## 6-S. Supabase-backed deployment (current architecture — simplest)
+
+All relational data AND embeddings live in the user's Supabase project
+(`aws-1-ap-south-1`, migrated 2026-07-17): documents, chunks (text + FTS +
+pgvector embeddings), entities, relations, logs. The VPS therefore runs only
+**api + redis + qdrant** — no local Postgres, nothing to ship.
+
+```bash
+# .env on the VPS
+POSTGRES_DSN=postgresql+asyncpg://postgres.<PROJECT_REF>:<DB_PASSWORD>@aws-1-ap-south-1.pooler.supabase.com:5432/postgres
+```
+
+```bash
+# boot (note the explicit service list — postgres stays down)
+docker compose -f docker-compose.yml -f docker-compose.cloudpanel.yml \
+               -f docker-compose.supabase.yml up -d --build api redis qdrant
+
+# populate Qdrant from the embeddings stored in Supabase (~5 min, one-time)
+docker compose exec api dl-rebuild-qdrant
+```
+
+Done — no dumps, no snapshots. The engine auto-detects the Supabase pooler and
+applies the required asyncpg settings (statement cache off, modest pool). All
+future ingests mirror embeddings back into Supabase automatically, so
+`dl-rebuild-qdrant` always reconstructs the latest index.
+
+The sections below remain for a self-hosted-Postgres deployment.
+
 ## 6. Load the index — migrate (fast) or re-ingest (clean)
 
 ### Option A — migrate your local data (recommended, ~minutes)

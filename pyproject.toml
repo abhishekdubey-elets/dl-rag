@@ -79,6 +79,7 @@ dl-ingest = "dl_rag.scripts.run_ingest:main"
 dl-kg-extract = "dl_rag.scripts.run_kg_extract:main"
 dl-ingest-youtube = "dl_rag.scripts.run_ingest_youtube:main"
 dl-import-supabase = "dl_rag.scripts.run_import_supabase:main"
+dl-rebuild-qdrant = "dl_rag.scripts.run_rebuild_qdrant:main"
 
 [build-system]
 requires = ["poetry-core>=1.9.0"]

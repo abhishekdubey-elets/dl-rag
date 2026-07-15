@@ -1,0 +1,14 @@
+# Supabase-DB overlay — use when POSTGRES_DSN points at Supabase, so no local
+# Postgres container is needed. Combine with the CloudPanel overlay on the VPS:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.cloudpanel.yml \
+#                  -f docker-compose.supabase.yml up -d api redis qdrant
+#
+# (Note the explicit service list — it keeps the unused postgres service down.)
+services:
+  api:
+    depends_on: !override
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
