@@ -83,6 +83,13 @@ INDEX_SIZE = Gauge(
     registry=REGISTRY,
 )
 
+LLM_FALLBACK = Counter(
+    "dlrag_llm_fallback_total",
+    "Requests served by the fallback LLM provider, by reason.",
+    ["reason"],
+    registry=REGISTRY,
+)
+
 AUTO_INGEST_RUNS = Counter(
     "dlrag_auto_ingest_runs_total",
     "Scheduled/manual auto-ingest runs by outcome.",

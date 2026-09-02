@@ -122,6 +122,8 @@ RATE_LIMIT_REQUESTS=60
 
 LLM_API_KEY=<your OpenAI key — use a FRESH one, rotate the old>
 LLM_MODEL=gpt-4o-mini
+ANTHROPIC_API_KEY=<optional — automatic failover when OpenAI has no credits / is down>
+ANTHROPIC_MODEL=claude-sonnet-5
 
 EMBEDDING_MODEL=BAAI/bge-small-en-v1.5           # must match the index you migrate!
 RERANKER_MODEL=cross-encoder/ms-marco-MiniLM-L-6-v2

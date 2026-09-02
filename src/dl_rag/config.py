@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 1500
     llm_timeout_seconds: int = 60
 
+    # --- LLM fallback (Anthropic) ---
+    # Used when no OpenAI key is configured, or when an OpenAI call fails
+    # (exhausted credits, auth error, outage). Same temperature/max_tokens.
+    anthropic_api_key: str | None = None
+    anthropic_model: str = "claude-sonnet-5"
+    llm_fallback_enabled: bool = True
+
     # --- Crawler ---
     crawler_base_url: str = "https://digitallearning.eletsonline.com"
     crawler_user_agent: str = (
@@ -174,11 +181,18 @@ class Settings(BaseSettings):
 
     @field_validator(
         "qdrant_api_key", "youtube_api_key", "youtube_channel_id",
-        "transcript_api_url", "transcript_api_key", mode="before",
+        "transcript_api_url", "transcript_api_key", "anthropic_api_key",
+        mode="before",
     )
     @classmethod
     def _empty_key_is_none(cls, v: str | None) -> str | None:
         return v or None
+
+    @property
+    def openai_configured(self) -> bool:
+        """True when a real (non-placeholder) OpenAI-compatible key is set."""
+        key = (self.llm_api_key or "").strip()
+        return bool(key) and key != "sk-replace-me"
 
     @property
     def api_key_set(self) -> set[str]:

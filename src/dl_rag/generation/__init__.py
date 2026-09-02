@@ -7,7 +7,8 @@ from dl_rag.generation.citations import (
     to_source_refs,
     used_citations,
 )
-from dl_rag.generation.llm_client import LLMError, OpenAICompatibleLLM
+from dl_rag.generation.anthropic_client import AnthropicLLM
+from dl_rag.generation.llm_client import FallbackLLM, LLMError, OpenAICompatibleLLM
 from dl_rag.generation.prompts import (
     QUERY_TYPE_INSTRUCTIONS,
     SYSTEM_PROMPT,
@@ -21,6 +22,8 @@ __all__ = [
     "AnswerGenerator",
     "LLMError",
     "OpenAICompatibleLLM",
+    "AnthropicLLM",
+    "FallbackLLM",
     "build_citations",
     "build_messages",
     "extract_cited_indices",

@@ -13,13 +13,36 @@ from typing import Any
 
 import tenacity
 
+from dl_rag.exceptions import GenerationError
 from dl_rag.logging_config import get_logger
+from dl_rag.observability import metrics
 
 logger = get_logger(__name__)
 
+_GENERATION_UNAVAILABLE = (
+    "Answer generation is temporarily unavailable (LLM provider error). "
+    "Please retry shortly."
+)
+# Provider responses that mean "this key cannot be used right now" — retrying
+# them only delays the failover.
+_QUOTA_MARKERS = ("insufficient_quota", "credit_balance_exhausted", "no credits")
 
-class LLMError(RuntimeError):
-    """Raised when an LLM request fails (after exhausting retries)."""
+
+class LLMError(GenerationError, RuntimeError):
+    """Raised when an LLM request fails (after exhausting retries).
+
+    A :class:`~dl_rag.exceptions.GenerationError`, so the API answers 503
+    ``generation_error`` with a safe detail; the raw provider message stays in
+    ``.message`` / the logs.
+    """
+
+    def __init__(self, message: str, *, detail: str | None = None) -> None:
+        super().__init__(message, detail=detail or _GENERATION_UNAVAILABLE)
+
+
+def is_quota_error(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(marker in text for marker in _QUOTA_MARKERS)
 
 
 class OpenAICompatibleLLM:
@@ -64,15 +87,19 @@ class OpenAICompatibleLLM:
         return self._client_obj
 
     def _retrying(self, openai_mod: Any) -> tenacity.AsyncRetrying:
-        """Build the retry controller for transient, retryable API errors."""
+        """Build the retry controller for transient, retryable API errors.
+
+        Quota exhaustion also arrives as a 429 ``RateLimitError`` but is not
+        transient — it is excluded so the fallback provider kicks in at once.
+        """
+
+        def _retryable(exc: BaseException) -> bool:
+            if isinstance(exc, (openai_mod.APIConnectionError, openai_mod.InternalServerError)):
+                return True
+            return isinstance(exc, openai_mod.RateLimitError) and not is_quota_error(exc)
+
         return tenacity.AsyncRetrying(
-            retry=tenacity.retry_if_exception_type(
-                (
-                    openai_mod.APIConnectionError,
-                    openai_mod.RateLimitError,
-                    openai_mod.InternalServerError,
-                )
-            ),
+            retry=tenacity.retry_if_exception(_retryable),
             stop=tenacity.stop_after_attempt(3),
             wait=tenacity.wait_exponential(multiplier=1, min=1, max=10),
             before_sleep=self._log_retry,
@@ -199,3 +226,101 @@ class OpenAICompatibleLLM:
         except Exception as exc:  # noqa: BLE001 - do not retry mid-stream, but report clearly
             logger.error("llm.stream.failed", model=self._model, error=str(exc))
             raise LLMError(f"LLM streaming failed: {exc}") from exc
+
+
+class FallbackLLM:
+    """Primary provider with automatic failover to a secondary one.
+
+    * No primary configured → every call goes to the secondary.
+    * Primary raises :class:`LLMError` (quota exhausted, auth, outage …) →
+      the same request is replayed on the secondary and a warning is logged.
+    * Streaming fails over only while nothing has been yielded yet; once tokens
+      are flowing a mid-stream failure surfaces as-is (replaying would
+      duplicate output).
+    """
+
+    def __init__(
+        self,
+        primary: Any | None,
+        secondary: Any | None,
+        *,
+        primary_name: str = "primary",
+        secondary_name: str = "fallback",
+    ) -> None:
+        if primary is None and secondary is None:
+            raise ValueError("FallbackLLM needs at least one provider")
+        self._primary = primary
+        self._secondary = secondary
+        self._primary_name = primary_name
+        self._secondary_name = secondary_name
+
+    @property
+    def providers(self) -> list[str]:
+        names = []
+        if self._primary is not None:
+            names.append(self._primary_name)
+        if self._secondary is not None:
+            names.append(self._secondary_name)
+        return names
+
+    def _failover(self, reason: str, error: str | None = None) -> Any:
+        if self._secondary is None:
+            return None
+        metrics.LLM_FALLBACK.labels(reason).inc()
+        logger.warning("llm.fallback", reason=reason, to=self._secondary_name,
+                       error=(error or "")[:200])
+        return self._secondary
+
+    async def complete(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        response_format: dict[str, Any] | None = None,
+    ) -> tuple[str, dict[str, int]]:
+        kwargs = {"temperature": temperature, "max_tokens": max_tokens,
+                  "response_format": response_format}
+        if self._primary is None:
+            fallback = self._failover("primary_missing")
+            return await fallback.complete(messages, **kwargs)
+        try:
+            return await self._primary.complete(messages, **kwargs)
+        except Exception as exc:  # noqa: BLE001 - any primary failure is a reason to fail over
+            fallback = self._failover("primary_failed", str(exc))
+            if fallback is None:
+                raise self._normalise(exc) from exc
+            return await fallback.complete(messages, **kwargs)
+
+    @staticmethod
+    def _normalise(exc: Exception) -> LLMError:
+        return exc if isinstance(exc, LLMError) else LLMError(f"LLM request failed: {exc}")
+
+    async def stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+    ) -> AsyncIterator[str]:
+        kwargs = {"temperature": temperature, "max_tokens": max_tokens}
+        if self._primary is None:
+            fallback = self._failover("primary_missing")
+            async for delta in fallback.stream(messages, **kwargs):
+                yield delta
+            return
+
+        yielded = False
+        try:
+            async for delta in self._primary.stream(messages, **kwargs):
+                yielded = True
+                yield delta
+            return
+        except Exception as exc:  # noqa: BLE001 - see complete()
+            if yielded:
+                raise self._normalise(exc) from exc
+            fallback = self._failover("primary_failed", str(exc))
+            if fallback is None:
+                raise self._normalise(exc) from exc
+        async for delta in fallback.stream(messages, **kwargs):
+            yield delta

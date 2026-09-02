@@ -19,7 +19,8 @@ from dl_rag.config import Settings
 from dl_rag.db.database import Database
 from dl_rag.embeddings.embedder import SentenceTransformerEmbedder
 from dl_rag.generation.answer_generator import AnswerGenerator
-from dl_rag.generation.llm_client import OpenAICompatibleLLM
+from dl_rag.generation.anthropic_client import AnthropicLLM
+from dl_rag.generation.llm_client import FallbackLLM, OpenAICompatibleLLM
 from dl_rag.ingestion.chunking.semantic_chunker import SemanticChunker
 from dl_rag.ingestion.crawler.wordpress import WordPressCrawler
 from dl_rag.ingestion.entities.extractor import EntityExtractor
@@ -46,7 +47,7 @@ class Container:
     cache: RedisCache
     vector_store: QdrantVectorStore
     embedder: SentenceTransformerEmbedder
-    llm: OpenAICompatibleLLM
+    llm: FallbackLLM
     knowledge_graph: PostgresKnowledgeGraph
     analyzer: HeuristicQueryAnalyzer
     retriever: HybridRetriever
@@ -57,6 +58,41 @@ class Container:
     ingestion_service: IngestionService
     admin_service: AdminService
     auto_ingest: AutoIngestService
+
+
+def _build_llm(settings: Settings) -> FallbackLLM:
+    """OpenAI-compatible primary with Anthropic failover (either may be absent).
+
+    With no OpenAI key the Anthropic client is the only provider; with no
+    Anthropic key the OpenAI client runs alone (errors surface as before). When
+    neither is configured the placeholder OpenAI client is kept so requests
+    fail with a clear provider error rather than at startup.
+    """
+    openai_llm = OpenAICompatibleLLM(
+        settings.llm_base_url,
+        settings.llm_api_key,
+        settings.llm_model,
+        settings.llm_temperature,
+        settings.llm_max_tokens,
+        settings.llm_timeout_seconds,
+    )
+    anthropic_llm = (
+        AnthropicLLM(
+            settings.anthropic_api_key,
+            settings.anthropic_model,
+            settings.llm_temperature,
+            settings.llm_max_tokens,
+            settings.llm_timeout_seconds,
+        )
+        if settings.anthropic_api_key and settings.llm_fallback_enabled
+        else None
+    )
+    primary = openai_llm if (settings.openai_configured or anthropic_llm is None) else None
+    return FallbackLLM(
+        primary, anthropic_llm,
+        primary_name=f"openai:{settings.llm_model}",
+        secondary_name=f"anthropic:{settings.anthropic_model}",
+    )
 
 
 def build_container(settings: Settings) -> Container:
@@ -71,14 +107,7 @@ def build_container(settings: Settings) -> Container:
     vector_store = QdrantVectorStore(
         settings.qdrant_url, settings.qdrant_collection, settings.qdrant_api_key
     )
-    llm = OpenAICompatibleLLM(
-        settings.llm_base_url,
-        settings.llm_api_key,
-        settings.llm_model,
-        settings.llm_temperature,
-        settings.llm_max_tokens,
-        settings.llm_timeout_seconds,
-    )
+    llm = _build_llm(settings)
 
     # Retrieval wiring (all against protocols).
     sparse = PostgresFTSRetriever(db.sessionmaker)

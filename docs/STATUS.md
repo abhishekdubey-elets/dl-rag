@@ -175,6 +175,19 @@ transcript-less videos. State/watermarks in Redis (`autoingest:state`); admin AP
 `dlrag_auto_ingest_*`. 17 unit tests (feed parsing, relevance filter, watermarks,
 stage isolation, concurrency guard, feed overflow).
 
+## LLM failover (2026-09-02)
+
+Production `/api/chat` returned 500s because the OpenAI account ran out of credits
+(`credit_balance_exhausted`) while retrieval was fine. Shipped: `AnthropicLLM`
+(Messages API adapter — system-role extraction, turn merging, JSON-mode via
+instruction) and `FallbackLLM` (OpenAI primary → Anthropic on `LLMError`, or
+Anthropic alone when no OpenAI key is set; streams fail over only before the first
+token). Quota-type 429s are excluded from retries so failover is immediate.
+`LLMError` is now a `GenerationError` → API answers `503 generation_error` with a
+safe detail (provider text stays in logs). Config: `ANTHROPIC_API_KEY`,
+`ANTHROPIC_MODEL` (default `claude-sonnet-5`), `LLM_FALLBACK_ENABLED`; metric
+`dlrag_llm_fallback_total{reason}`. 19 unit tests.
+
 ## Performance targets (from the spec)
 
 The <2s average / <700ms first-token targets are **achievable but must be measured

@@ -262,6 +262,10 @@ All configuration is environment-driven and validated at startup — see
 
 - `LLM_BASE_URL` / `LLM_API_KEY` / `LLM_MODEL` — any OpenAI-compatible endpoint
   (OpenAI, Azure, vLLM, Together, Groq, Ollama …).
+- `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` — **automatic failover**: used when no
+  OpenAI key is set or an OpenAI call fails (exhausted credits, auth, outage).
+  Quota errors skip retries so the switch is immediate; `dlrag_llm_fallback_total`
+  counts it. LLM failures answer `503 generation_error` (never a bare 500).
 - `EMBEDDING_MODEL`, `RERANKER_MODEL` — quality/speed trade-off.
 - `RETRIEVAL_CANDIDATES` (40) → `FINAL_TOP_K` (8), `RRF_K`, weights.
 - `REQUIRE_AUTH`, `RATE_LIMIT_*`.
