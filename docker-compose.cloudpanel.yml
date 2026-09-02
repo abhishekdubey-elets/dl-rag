@@ -8,19 +8,23 @@
 services:
   api:
     ports: !override
-      - "127.0.0.1:8090:8000"
+      - "127.0.0.1:${APP_PORT:-8090}:8000"
     volumes:
       - models_cache:/app/models_cache
     restart: unless-stopped
 
+  # Datastores: internal Docker network only — never exposed on the public VPS.
   postgres:
     ports: !override []
+    restart: unless-stopped
 
   redis:
     ports: !override []
+    restart: unless-stopped
 
   qdrant:
     ports: !override []
+    restart: unless-stopped
 
 volumes:
   models_cache:

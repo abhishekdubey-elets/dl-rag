@@ -38,15 +38,23 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.error("startup.create_all_failed", error=str(exc))
 
+    if settings.auto_ingest_enabled:
+        container.auto_ingest.start()
+
     logger.info(
         "startup.ready",
         version=__version__,
         environment=settings.environment,
         require_auth=settings.require_auth,
+        auto_ingest=settings.auto_ingest_enabled,
     )
     try:
         yield
     finally:
+        try:
+            await container.auto_ingest.stop()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             await container.db.dispose()
         except Exception:  # noqa: BLE001

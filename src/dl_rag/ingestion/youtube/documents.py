@@ -14,6 +14,19 @@ from dl_rag.models.domain import SourceDocument
 from dl_rag.models.enums import ContentType
 from dl_rag.utils.text import clean_whitespace
 
+TRANSCRIPT_HEADING = "## Transcript"
+_MAX_TRANSCRIPT_CHARS = 200_000
+
+
+def merge_transcript(content_markdown: str, transcript: str) -> str:
+    """Replace or append the ``## Transcript`` section of a video document body."""
+    base = content_markdown or ""
+    idx = base.find(TRANSCRIPT_HEADING)
+    if idx != -1:
+        base = base[:idx].rstrip()
+    transcript = transcript[:_MAX_TRANSCRIPT_CHARS]
+    return f"{base}\n\n{TRANSCRIPT_HEADING}\n\n{transcript}".strip()
+
 
 def _duration_label(seconds: int | None) -> str | None:
     if not seconds:
@@ -35,7 +48,7 @@ def video_to_document(video: VideoInfo, transcript: str | None) -> SourceDocumen
     if description:
         sections.append(description)
     if transcript:
-        sections.append(f"## Transcript\n\n{transcript}")
+        sections.append(f"{TRANSCRIPT_HEADING}\n\n{transcript}")
     body = "\n\n".join(sections)
 
     doc = SourceDocument(

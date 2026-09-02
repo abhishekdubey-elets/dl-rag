@@ -218,6 +218,74 @@ class WordPressCrawler:
                 page += 1
         return found
 
+    # ------------------------------------------------------------------ #
+    # Incremental fetch (scheduler path)
+    # ------------------------------------------------------------------ #
+    async def fetch_recent_posts(
+        self, *, modified_after: datetime, limit: int = 500
+    ) -> list[SourceDocument]:
+        """Documents for posts created/edited since ``modified_after``.
+
+        Uses the REST API's ``modified_after`` filter and maps the ``_embed``-ed
+        post objects straight to documents — no sitemap walk, no page fetches —
+        so a daily poll costs one or two requests. WordPress compares the
+        timestamp in site-local time; callers pass UTC, which for an IST site
+        yields a superset (content-hash de-dup downstream makes that harmless).
+        """
+        stamp = modified_after.strftime("%Y-%m-%dT%H:%M:%S")
+        documents: list[SourceDocument] = []
+        async with self._new_client() as client:
+            robots = RobotsChecker(self.base_url, self.user_agent, self.respect_robots)
+            try:
+                await robots.load(client)
+            except Exception as exc:  # noqa: BLE001 - fail open
+                logger.warning("crawler.robots_load_failed", error=str(exc))
+
+            page = 1
+            while len(documents) < limit:
+                params: dict[str, Any] = {
+                    "per_page": 100, "page": page, "_embed": 1,
+                    "modified_after": stamp, "orderby": "modified", "order": "desc",
+                }
+                try:
+                    response = await client.get(
+                        f"{self.base_url}/wp-json/wp/v2/posts", params=params
+                    )
+                except httpx.HTTPError as exc:
+                    logger.warning("crawler.recent_request_failed", page=page,
+                                   error=str(exc))
+                    break
+                if response.status_code >= 400:
+                    break
+                try:
+                    data = response.json()
+                except ValueError:
+                    break
+                if not isinstance(data, list) or not data:
+                    break
+
+                for post in data:
+                    if not isinstance(post, dict):
+                        continue
+                    link = post.get("link")
+                    if not isinstance(link, str) or not _looks_like_article(link):
+                        continue
+                    if not robots.allowed(link):
+                        continue
+                    document = await self.fetch_via_api(post)
+                    if document is not None:
+                        documents.append(document)
+                        if len(documents) >= limit:
+                            break
+
+                total_pages = _int_header(response.headers.get("X-WP-TotalPages"))
+                if (total_pages and page >= total_pages) or page >= _API_PAGE_SAFETY_CAP:
+                    break
+                page += 1
+
+        logger.info("crawler.recent.done", since=stamp, documents=len(documents))
+        return documents
+
     async def _sitemap_discover(self, client: httpx.AsyncClient) -> list[str]:
         found: list[str] = []
         index_url = urljoin(self.base_url + "/", "sitemap_index.xml")

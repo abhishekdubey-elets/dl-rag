@@ -134,6 +134,35 @@ Ingestion is **idempotent** (content-hash de-duplication) and safe to re-run.
 Please crawl your own property responsibly — concurrency and a politeness delay
 are configurable (`CRAWLER_*`), and `robots.txt` is honoured by default.
 
+### Keeping the index current (auto-ingest)
+
+Set `AUTO_INGEST_ENABLED=true` and the API runs a background scheduler (default
+every 24 h) that, without any manual crawl:
+
+- picks up **new or edited site articles** via the WordPress REST API's
+  `modified_after` watermark (no sitemap walk — one or two requests per run);
+- picks up **new channel videos** from `@eletsvideos` via the channel's Atom
+  feed, keeps only the **education vertical** (title matches
+  `YOUTUBE_TITLE_PATTERN` — WES, Back to Campus, school/university/edtech …),
+  fetches a transcript when one is obtainable, and indexes them;
+- **backfills transcripts** for a few indexed videos still missing one;
+
+and for every document runs the standard pipeline — chunk → **embed → Qdrant +
+Postgres → knowledge graph** — so answers include it immediately.
+
+```bash
+curl -s localhost:8000/api/admin/auto-ingest -H 'X-API-Key: $KEY'            # state + last run
+curl -s -X POST 'localhost:8000/api/admin/auto-ingest/run?wait=true' -H 'X-API-Key: $KEY'
+poetry run dl-auto-ingest --once            # same thing from a cron job / worker container
+```
+
+Video transcripts: configure the keyed provider (`TRANSCRIPT_API_URL` +
+`TRANSCRIPT_API_KEY`, youtube-transcript.io) — it is a plain HTTP API, so it
+works from the server and supports batching. Without it, YouTube's own caption
+endpoints are used, which are **blocked for datacenter IPs** and throttled
+elsewhere; then run `dl-fetch-captions` from a workstation and
+`dl-import-transcripts` on the server to fill the gap.
+
 ---
 
 ## API
@@ -147,6 +176,8 @@ are configurable (`CRAWLER_*`), and `robots.txt` is honoured by default.
 | POST | `/api/feedback` | Thumbs up/down + comment on an answer. |
 | GET | `/api/admin/stats` | Index size, docs by type/year, failures. |
 | GET | `/api/admin/insights` | Popular questions, latency, citation frequency, feedback. |
+| GET | `/api/admin/auto-ingest` | Scheduler state, watermarks, last run summary. |
+| POST | `/api/admin/auto-ingest/run` | Trigger an auto-ingest run now (`?wait=true` to block). |
 | GET | `/health` | Liveness + dependency checks. |
 | GET | `/metrics` | Prometheus metrics. |
 

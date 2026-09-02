@@ -165,6 +165,38 @@ class AdminInsightsResponse(BaseModel):
     feedback_negative: int = 0
 
 
+class AutoIngestRunSummary(BaseModel):
+    """Outcome of one scheduler run (also persisted as ``last_run``)."""
+
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    duration_seconds: float = 0.0
+    reason: str = "scheduled"
+    articles: dict[str, int] = Field(default_factory=dict)
+    videos: dict[str, int] = Field(default_factory=dict)
+    transcripts: dict[str, int] = Field(default_factory=dict)
+    errors: list[str] = Field(default_factory=list)
+    skipped: str | None = None
+
+
+class AutoIngestStatusResponse(BaseModel):
+    enabled: bool
+    loop_active: bool
+    interval_hours: float
+    running: bool
+    runs_completed: int = 0
+    next_run_at: datetime | None = None
+    last_run: AutoIngestRunSummary | None = None
+    watermarks: dict[str, str] = Field(default_factory=dict)
+    channel_id: str | None = None
+
+
+class AutoIngestRunResponse(BaseModel):
+    accepted: bool = True
+    message: str = ""
+    run: AutoIngestRunSummary | None = None
+
+
 class ErrorResponse(BaseModel):
     error: str
     detail: str | None = None

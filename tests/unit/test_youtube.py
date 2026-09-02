@@ -91,6 +91,44 @@ class TestTranscriptPayloadParsing:
         assert TranscriptFetcher._parse_keyed_payload(resp) == "welcome to the summit"
 
 
+class TestBatchParsing:
+    """youtube-transcript.io batch shape: list of per-video objects."""
+
+    def test_maps_text_tracks_and_missing(self):
+        payload = [
+            {"id": "vidA", "text": "joined text A", "tracks": [{"language": "en",
+             "transcript": [{"text": "ignored"}]}]},
+            {"id": "vidB", "text": "", "tracks": [{"language": "en",
+             "transcript": [{"text": "from"}, {"text": "tracks"}]}]},
+            {"id": "vidC", "tracks": []},  # captions disabled
+            {"id": "vidZ", "text": "not requested"},
+        ]
+        out = TranscriptFetcher._parse_batch(payload, ["vidA", "vidB", "vidC", "vidD"])
+        assert out == {
+            "vidA": "joined text A",
+            "vidB": "from tracks",
+            "vidC": None,
+            "vidD": None,  # not returned at all
+        }
+        assert "vidZ" not in out
+
+    def test_non_list_payload(self):
+        assert TranscriptFetcher._parse_batch({"error": "x"}, ["a"]) == {"a": None}
+
+    def test_supports_batch_requires_provider_and_key(self):
+        base = Settings(_env_file=None)
+        assert not TranscriptFetcher(base).supports_batch
+        keyed = Settings(
+            _env_file=None,
+            transcript_api_url="https://www.youtube-transcript.io/api/transcripts",
+            transcript_api_key="k",
+        )
+        assert TranscriptFetcher(keyed).supports_batch
+        other = Settings(_env_file=None, transcript_api_url="https://x/{video_id}",
+                         transcript_api_key="k")
+        assert not TranscriptFetcher(other).supports_batch
+
+
 class TestVideoQueryRouting:
     @pytest.fixture
     def analyzer(self, settings: Settings) -> HeuristicQueryAnalyzer:

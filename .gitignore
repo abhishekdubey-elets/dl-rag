@@ -36,3 +36,8 @@ data/crawl/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local index artifacts / fetched transcripts (never commit)
+dl_rag.dump
+dl_chunks.snapshot
+data/*.json

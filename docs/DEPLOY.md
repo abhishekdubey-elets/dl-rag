@@ -261,11 +261,31 @@ crontab -e     # add:
 0 3 * * * cd ~/dl && docker compose exec -T postgres pg_dump -U dl -d dl_rag -Fc > ~/backups/dl_rag_$(date +\%F).dump && find ~/backups -mtime +14 -delete
 ```
 
-**Fresh content** (new articles/videos appear on the site continuously):
+**Fresh content** (new articles/videos appear on the site continuously) — turn on the
+built-in scheduler instead of cron jobs:
+
+```ini
+# .env
+AUTO_INGEST_ENABLED=true          # daily: new/edited articles + education-vertical channel videos
+AUTO_INGEST_INTERVAL_HOURS=24
+```
+
+and, for video transcripts, the keyed provider (YouTube's own caption endpoints are
+blocked for datacenter IPs; this HTTP API is not):
+
+```ini
+TRANSCRIPT_API_URL=https://www.youtube-transcript.io/api/transcripts
+TRANSCRIPT_API_KEY=<your youtube-transcript.io token>
+```
+
+then recreate the api container (`docker compose … up -d api`). Check it with
+`GET /api/admin/auto-ingest` and force a run with `POST /api/admin/auto-ingest/run?wait=true`.
+Bulk transcript backfills: `dl-fetch-captions <csv> <json>` (batched via the keyed
+provider) then `dl-import-transcripts <json>`, both inside the container. The legacy
+cron alternative:
 
 ```bash
-0 4 * * 0 cd ~/dl && docker compose exec -T api dl-ingest --since $(date -d '8 days ago' +\%F)
-30 4 * * 0 cd ~/dl && docker compose exec -T api dl-ingest-youtube --skip-existing --max-videos 300
+0 4 * * * cd ~/dl && docker compose exec -T api dl-auto-ingest --once
 ```
 
 **Updates** (code changes):

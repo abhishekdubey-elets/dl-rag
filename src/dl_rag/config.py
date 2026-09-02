@@ -105,7 +105,24 @@ class Settings(BaseSettings):
     crawler_timeout_seconds: int = 30
 
     # --- YouTube ingestion ---
-    youtube_channel_url: str = "https://www.youtube.com/user/eletsvideos"
+    youtube_channel_url: str = "https://www.youtube.com/@eletsvideos"
+    # Channel id behind the keyless Atom feed (latest uploads, not bot-gated).
+    # Resolved from the channel page at runtime when unset.
+    youtube_channel_id: str | None = "UCFSN6sevjpNHIW1OnNzwZoQ"
+    # The channel carries every Elets vertical (eGov, health, BFSI …); the
+    # auto-ingest scheduler only takes videos whose NFKC-normalised title
+    # matches this pattern (case-insensitive). Empty = accept everything.
+    youtube_title_pattern: str = (
+        r"\b(education(al)?|ed-?tech|schools?|universit(y|ies)|colleges?|campus"
+        r"|(?<!machine )learning|e-?learning|students?|teachers?|academic|academia"
+        r"|academy|skills?|skilling|nep|wes|world education summit|back to campus"
+        r"|higher education|k-?12|vice.?chancellor|faculty|curriculum|scholarship"
+        r"|iit|iim|nit|ugc|aicte|cbse|ncert|nirf|digital ?learning|classroom"
+        r"|literacy|pedagogy|edu(cators?)?)\b"
+    )
+    # Also match the pattern against the video description (more recall, more
+    # false positives — event promo footers mention every Elets summit).
+    youtube_match_description: bool = False
     # Optional Google YouTube Data API v3 key — used for the catalog when set;
     # otherwise yt-dlp lists the channel keylessly.
     youtube_api_key: str | None = None
@@ -138,6 +155,17 @@ class Settings(BaseSettings):
     answer_cache_enabled: bool = True
     embedding_cache_enabled: bool = True
 
+    # --- Auto-ingest scheduler (new articles + channel videos → index + KG) ---
+    auto_ingest_enabled: bool = False
+    auto_ingest_interval_hours: float = 24.0
+    auto_ingest_startup_delay_seconds: int = 120
+    # Window used on the very first run (no watermark yet).
+    auto_ingest_lookback_days: int = 7
+    # How deep to scan the channel catalog when the 15-entry feed overflows.
+    auto_ingest_video_scan_limit: int = 100
+    # Transcript-less videos to retry per run (0 disables the backfill).
+    auto_ingest_transcript_backfill: int = 10
+
     # ------------------------------------------------------------------ #
     @field_validator("api_keys")
     @classmethod
@@ -145,8 +173,8 @@ class Settings(BaseSettings):
         return v.strip()
 
     @field_validator(
-        "qdrant_api_key", "youtube_api_key", "transcript_api_url",
-        "transcript_api_key", mode="before",
+        "qdrant_api_key", "youtube_api_key", "youtube_channel_id",
+        "transcript_api_url", "transcript_api_key", mode="before",
     )
     @classmethod
     def _empty_key_is_none(cls, v: str | None) -> str | None:

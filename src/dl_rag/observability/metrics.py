@@ -83,6 +83,20 @@ INDEX_SIZE = Gauge(
     registry=REGISTRY,
 )
 
+AUTO_INGEST_RUNS = Counter(
+    "dlrag_auto_ingest_runs_total",
+    "Scheduled/manual auto-ingest runs by outcome.",
+    ["status"],
+    registry=REGISTRY,
+)
+
+AUTO_INGEST_DOCS = Counter(
+    "dlrag_auto_ingest_documents_total",
+    "Documents (re)ingested by the auto-ingest scheduler, by source.",
+    ["source"],
+    registry=REGISTRY,
+)
+
 
 @contextmanager
 def observe(histogram: Histogram, *labels: str) -> Iterator[None]:

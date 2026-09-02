@@ -28,12 +28,11 @@ from sqlalchemy import text as sqltext
 
 from dl_rag.api.deps import build_container
 from dl_rag.config import get_settings
+from dl_rag.ingestion.youtube.documents import TRANSCRIPT_HEADING as _TRANSCRIPT_HEADING
+from dl_rag.ingestion.youtube.documents import merge_transcript as _merge_transcript
 from dl_rag.logging_config import configure_logging, get_logger
 
 logger = get_logger(__name__)
-
-_TRANSCRIPT_HEADING = "## Transcript"
-_MAX_TRANSCRIPT_CHARS = 200_000
 
 
 def _parse_args() -> argparse.Namespace:
@@ -65,16 +64,6 @@ async def _supabase_connect(settings) -> asyncpg.Connection:
                            error=str(exc)[:120])
             await asyncio.sleep(3 * (attempt + 1))
     raise SystemExit(f"Could not connect to Supabase: {last}")
-
-
-def _merge_transcript(content_markdown: str, transcript: str) -> str:
-    """Replace or append the ``## Transcript`` section of a document body."""
-    base = content_markdown or ""
-    idx = base.find(_TRANSCRIPT_HEADING)
-    if idx != -1:
-        base = base[:idx].rstrip()
-    transcript = transcript[:_MAX_TRANSCRIPT_CHARS]
-    return f"{base}\n\n{_TRANSCRIPT_HEADING}\n\n{transcript}".strip()
 
 
 async def _run(args: argparse.Namespace) -> None:

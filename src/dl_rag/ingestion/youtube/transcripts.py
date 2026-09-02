@@ -27,6 +27,15 @@ from dl_rag.logging_config import get_logger
 logger = get_logger(__name__)
 
 _MAX_TRANSCRIPT_CHARS = 120_000
+_BATCH_PROVIDER = "youtube-transcript.io"
+
+
+class TranscriptProviderError(Exception):
+    """The keyed provider answered with an HTTP error (rate limit, credits, outage)."""
+
+    def __init__(self, status_code: int, detail: str = "") -> None:
+        super().__init__(f"transcript provider HTTP {status_code}: {detail}")
+        self.status_code = status_code
 
 
 class TranscriptFetcher:
@@ -37,6 +46,12 @@ class TranscriptFetcher:
             if lang.strip()
         ]
 
+    @property
+    def supports_batch(self) -> bool:
+        """True when the configured keyed provider accepts many ids per request."""
+        url = self._settings.transcript_api_url or ""
+        return _BATCH_PROVIDER in url and bool(self._settings.transcript_api_key)
+
     async def fetch(self, video_id: str) -> str | None:
         if self._settings.transcript_api_url:
             text = await self._fetch_keyed(video_id)
@@ -44,6 +59,53 @@ class TranscriptFetcher:
                 return text[:_MAX_TRANSCRIPT_CHARS]
         text = await asyncio.to_thread(self._fetch_keyless, video_id)
         return text[:_MAX_TRANSCRIPT_CHARS] if text else None
+
+    async def fetch_many(
+        self, video_ids: list[str], batch_size: int = 10
+    ) -> dict[str, str | None]:
+        """Keyed batch fetch: ``{video_id: transcript | None}`` for every id asked.
+
+        ``None`` means the provider returned no caption track for that video.
+        HTTP failures raise :class:`TranscriptProviderError` (never partial
+        silent loss) so callers can back off or stop on exhausted credits.
+        The keyed HTTP API is not IP-gated, unlike YouTube's own endpoints, so
+        this works equally from a datacenter host.
+        """
+        if not self.supports_batch:
+            raise ValueError("fetch_many requires the youtube-transcript.io provider")
+        settings = self._settings
+        results: dict[str, str | None] = {}
+        async with httpx.AsyncClient(timeout=120) as client:
+            for start in range(0, len(video_ids), batch_size):
+                batch = video_ids[start:start + batch_size]
+                resp = await client.post(
+                    str(settings.transcript_api_url),
+                    headers={
+                        "Authorization": f"Basic {settings.transcript_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={"ids": batch},
+                )
+                if resp.status_code >= 400:
+                    raise TranscriptProviderError(resp.status_code, resp.text[:200])
+                results.update(self._parse_batch(resp.json(), batch))
+        return results
+
+    @classmethod
+    def _parse_batch(cls, payload: Any, requested: list[str]) -> dict[str, str | None]:
+        """Map a per-video response list back onto the requested ids."""
+        out: dict[str, str | None] = dict.fromkeys(requested)
+        if not isinstance(payload, list):
+            return out
+        for item in payload:
+            if not isinstance(item, dict) or item.get("id") not in out:
+                continue
+            text = item.get("text")
+            if not isinstance(text, str) or not text.strip():
+                text = cls._extract_text(item.get("tracks")) or ""
+            text = text.strip()
+            out[item["id"]] = text[:_MAX_TRANSCRIPT_CHARS] if text else None
+        return out
 
     # ------------------------------------------------------------------ #
     async def _fetch_keyed(self, video_id: str) -> str | None:

@@ -24,6 +24,8 @@ from dl_rag.ingestion.chunking.semantic_chunker import SemanticChunker
 from dl_rag.ingestion.crawler.wordpress import WordPressCrawler
 from dl_rag.ingestion.entities.extractor import EntityExtractor
 from dl_rag.ingestion.pipeline import IngestionPipeline
+from dl_rag.ingestion.youtube.catalog import YouTubeCatalog
+from dl_rag.ingestion.youtube.transcripts import TranscriptFetcher
 from dl_rag.memory.conversation_memory import ConversationMemory
 from dl_rag.retrieval.compression import ContextCompressor
 from dl_rag.retrieval.dense import DenseRetriever
@@ -31,6 +33,7 @@ from dl_rag.retrieval.hybrid_retriever import HybridRetriever
 from dl_rag.retrieval.query_understanding import HeuristicQueryAnalyzer
 from dl_rag.retrieval.reranker import CrossEncoderReranker
 from dl_rag.services.admin_service import AdminService
+from dl_rag.services.auto_ingest import AutoIngestService
 from dl_rag.services.chat_service import ChatService
 from dl_rag.services.ingestion_service import IngestionService
 from dl_rag.vectorstore.qdrant_store import QdrantVectorStore
@@ -53,6 +56,7 @@ class Container:
     chat_service: ChatService
     ingestion_service: IngestionService
     admin_service: AdminService
+    auto_ingest: AutoIngestService
 
 
 def build_container(settings: Settings) -> Container:
@@ -92,13 +96,14 @@ def build_container(settings: Settings) -> Container:
     memory = ConversationMemory(cache, llm, settings)
 
     # Ingestion wiring.
+    crawler = WordPressCrawler(settings)
     pipeline = IngestionPipeline(
         settings=settings,
         db=db,
         vector_store=vector_store,
         embedder=embedder,
         knowledge_graph=knowledge_graph,
-        crawler=WordPressCrawler(settings),
+        crawler=crawler,
         chunker=SemanticChunker(settings),
         entity_extractor=EntityExtractor(settings),
     )
@@ -109,6 +114,10 @@ def build_container(settings: Settings) -> Container:
     )
     ingestion_service = IngestionService(pipeline, db, settings)
     admin_service = AdminService(db, vector_store)
+    auto_ingest = AutoIngestService(
+        settings=settings, db=db, cache=cache, pipeline=pipeline, crawler=crawler,
+        catalog=YouTubeCatalog(settings), transcripts=TranscriptFetcher(settings),
+    )
 
     return Container(
         settings=settings,
@@ -126,12 +135,17 @@ def build_container(settings: Settings) -> Container:
         chat_service=chat_service,
         ingestion_service=ingestion_service,
         admin_service=admin_service,
+        auto_ingest=auto_ingest,
     )
 
 
 # --- FastAPI dependency accessors ---------------------------------------- #
 def get_container(request: Request) -> Container:
     return request.app.state.container  # type: ignore[no-any-return]
+
+
+def get_auto_ingest_service(request: Request) -> AutoIngestService:
+    return get_container(request).auto_ingest
 
 
 def get_chat_service(request: Request) -> ChatService:

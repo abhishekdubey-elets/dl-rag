@@ -147,6 +147,34 @@ Spoken content is now searchable and feeds the knowledge graph (entities + spoke
 edges from talks). The youtube-transcript.io key (no credits) is no longer needed
 for matched videos. Index size after import: ~29.4k chunks.
 
+## Missing-transcript recovery + auto-ingest scheduler (2026-09-02)
+
+**Transcript gap**: 464 of the 991 indexed videos (`videos_missing_transcripts.csv`)
+never had a transcript source. The old transcripts Supabase project has since been
+wiped/repurposed, so YouTube's own caption tracks are the remaining source. Two
+decoupled CLIs: `dl-fetch-captions` (CSV → JSON, resumable, retries rate-limit
+errors) and `dl-import-transcripts` (JSON → merge under `## Transcript` → re-chunk,
+re-embed, re-index, KG). **YouTube hard-blocks datacenter IPs** (the Hostinger VPS
+was refused on request #1) and throttles residential ones after ~25 requests/hour.
+The way around it is the keyed youtube-transcript.io provider (`TRANSCRIPT_API_URL`
++ `TRANSCRIPT_API_KEY`): a plain HTTP API, not IP-gated, batched via
+`TranscriptFetcher.fetch_many` — `dl-fetch-captions` uses it automatically when
+configured (keyless library otherwise). First batch live: 22 videos / 264 chunks.
+Prod image lacks spaCy (optional) — the honorific person detector still runs, so
+speaker entities are captured.
+
+**Auto-ingest** (`services/auto_ingest.py`, `AUTO_INGEST_ENABLED`): a lifespan-managed
+loop (default 24 h; also `dl-auto-ingest --once` for cron) that per run (1) maps site
+posts created/edited since the `modified_after` watermark straight from the WP REST
+API and re-ingests those whose content hash changed, (2) reads the `@eletsvideos`
+Atom feed (keyless, not bot-gated; catalog scan when the 15-entry window overflows),
+keeps education-vertical titles (`YOUTUBE_TITLE_PATTERN`, NFKC-normalised — the
+channel uses decorative Unicode titles), ingests unseen videos, and (3) retries a few
+transcript-less videos. State/watermarks in Redis (`autoingest:state`); admin API
+`GET /api/admin/auto-ingest`, `POST …/run?wait=true`; Prometheus
+`dlrag_auto_ingest_*`. 17 unit tests (feed parsing, relevance filter, watermarks,
+stage isolation, concurrency guard, feed overflow).
+
 ## Performance targets (from the spec)
 
 The <2s average / <700ms first-token targets are **achievable but must be measured
