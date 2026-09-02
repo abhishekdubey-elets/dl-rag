@@ -188,6 +188,20 @@ safe detail (provider text stays in logs). Config: `ANTHROPIC_API_KEY`,
 `ANTHROPIC_MODEL` (default `claude-sonnet-5`), `LLM_FALLBACK_ENABLED`; metric
 `dlrag_llm_fallback_total{reason}`. 19 unit tests.
 
+## Source diversity + video interviews (2026-09-02)
+
+Diagnosis on prod for "What was announced at WES 2026?": videos were 16/40 dense
+candidates, but 7 of the 8 final slots went to chunks of ONE article (the
+guaranteed-latest slice even force-added a duplicate of it). Two fixes:
+`MAX_CHUNKS_PER_DOCUMENT` (default 3) applied after reranking (the cross-encoder now
+scores every candidate; the top-k cut comes after the cap), and the forced slice
+skips documents already in context. Second defect: interview-intent queries
+filtered to `content_type=interview` (an article type) and so excluded every
+transcribed video interview → "what did speakers say at WES Dubai" refused at
+confidence 0. Interview intent now allows `interview` + `video`. Verified: the
+announcement query's context spans 6 documents incl. 4 video interviews; the
+speakers query returns 8 video sources. 4 new unit tests.
+
 ## Performance targets (from the spec)
 
 The <2s average / <700ms first-token targets are **achievable but must be measured

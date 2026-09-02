@@ -220,7 +220,8 @@ class TestRecencyBlend:
 
             async def latest(self, query, top_k, filters=None, phrase=None):
                 self.latest_calls.append(phrase)
-                return [make_retrieved(9, year=2026, url="https://x/wes-2026/")]
+                return [make_retrieved(9, doc_id="doc-wes-2026", year=2026,
+                                       url="https://x/wes-2026/")]
 
         settings = settings.model_copy(update={"final_top_k": 3})
         sparse = SparseWithLatest()
@@ -249,3 +250,64 @@ class TestRecencyBlend:
         assert not (
             await analyzer.analyze("NEP implementation in Karnataka in 2021")
         ).recency_sensitive
+
+
+class TestSourceDiversity:
+    """One long article must not fill the whole context."""
+
+    def test_cap_per_document_preserves_order(self):
+        from dl_rag.retrieval.hybrid_retriever import _cap_per_document
+
+        ranked = (
+            [make_retrieved(i, doc_id="A", rerank=9.0 - i) for i in range(6)]
+            + [make_retrieved(i, doc_id="B", rerank=2.0 - i) for i in range(2)]
+            + [make_retrieved(0, doc_id="C", rerank=-1.0)]
+        )
+        out = _cap_per_document(ranked, 3)
+        assert [(rc.chunk.document_id, rc.chunk.chunk_index) for rc in out] == [
+            ("A", 0), ("A", 1), ("A", 2), ("B", 0), ("B", 1), ("C", 0),
+        ]
+        assert len(_cap_per_document(ranked, 0)) == 9  # 0 = unlimited
+
+    def test_forced_slice_skips_documents_already_present(self):
+        from dl_rag.retrieval.hybrid_retriever import _force_include_latest
+
+        kept = [make_retrieved(3, doc_id="A"), make_retrieved(0, doc_id="B")]
+        latest = [make_retrieved(0, doc_id="A"), make_retrieved(0, doc_id="C")]
+        out = _force_include_latest(kept, latest, top_k=8)
+        assert [rc.chunk.document_id for rc in out] == ["C", "A", "B"]
+
+    async def test_retriever_leaves_room_for_other_documents(self, settings: Settings):
+        settings = settings.model_copy(
+            update={"final_top_k": 5, "max_chunks_per_document": 3, "kg_expansion_enabled": False}
+        )
+        # Article A dominates on score with six chunks; B (video) and C trail.
+        dense = (
+            [make_retrieved(i, doc_id="A", score=0.9 - i * 0.01) for i in range(6)]
+            + [make_retrieved(0, doc_id="B", score=0.5, content_type=ContentType.VIDEO)]
+            + [make_retrieved(0, doc_id="C", score=0.4)]
+        )
+        retriever = HybridRetriever(
+            DenseRetriever(FakeEmbedder(), FakeVectorStore(dense)),
+            FakeSparse([]),
+            NoopReranker(),
+            settings,
+        )
+        out = await retriever.retrieve(_analysis(entities=[], time_range=TimeRange()))
+        docs = [rc.chunk.document_id for rc in out]
+        assert len(out) == 5
+        assert docs.count("A") == 3
+        assert "B" in docs and "C" in docs
+
+    async def test_interview_intent_includes_video_interviews(self, settings: Settings):
+        from dl_rag.retrieval.query_understanding import HeuristicQueryAnalyzer
+
+        analyzer = HeuristicQueryAnalyzer(settings)
+        a = await analyzer.analyze(
+            "What did speakers say in their interviews at the World Education Summit 2026?"
+        )
+        assert ContentType.INTERVIEW in a.content_type_filter
+        assert ContentType.VIDEO in a.content_type_filter
+        # An explicit video ask still narrows to videos only.
+        v = await analyzer.analyze("give me wes 2026 interview videos")
+        assert v.content_type_filter == [ContentType.VIDEO]

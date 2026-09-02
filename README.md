@@ -267,7 +267,8 @@ All configuration is environment-driven and validated at startup — see
   Quota errors skip retries so the switch is immediate; `dlrag_llm_fallback_total`
   counts it. LLM failures answer `503 generation_error` (never a bare 500).
 - `EMBEDDING_MODEL`, `RERANKER_MODEL` — quality/speed trade-off.
-- `RETRIEVAL_CANDIDATES` (40) → `FINAL_TOP_K` (8), `RRF_K`, weights.
+- `RETRIEVAL_CANDIDATES` (40) → `FINAL_TOP_K` (8), `RRF_K`, weights;
+  `MAX_CHUNKS_PER_DOCUMENT` (3) keeps one long article from filling the context.
 - `REQUIRE_AUTH`, `RATE_LIMIT_*`.
 
 ---

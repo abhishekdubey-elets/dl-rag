@@ -283,7 +283,10 @@ class HeuristicQueryAnalyzer:
 
         if _contains_any(lowered, ["interview", "interviews", "in conversation"]) \
                 or qtype == QueryType.INTERVIEW:
-            add(ContentType.INTERVIEW)
+            # Interviews exist both as articles (INTERVIEW) and as transcribed
+            # summit videos (VIDEO, titled "Interview | …"); filtering to the
+            # article type alone silently excluded every video interview.
+            add(ContentType.INTERVIEW, ContentType.VIDEO)
         if _contains_any(lowered, ["ranking", "rankings", "rank", "nirf"]) \
                 or qtype == QueryType.RANKING:
             add(ContentType.RANKING)

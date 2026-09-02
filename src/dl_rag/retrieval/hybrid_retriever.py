@@ -40,22 +40,44 @@ def _force_include_latest(
     """Prepend up to ``slots`` newest on-topic chunks, keeping ``top_k`` total.
 
     ``latest`` arrives newest-first from the repository. One chunk per document
-    (the newest article's lead chunk beats its own tail chunks), duplicates
-    already in ``kept`` don't burn a slot.
+    (the newest article's lead chunk beats its own tail chunks), and documents
+    already represented in ``kept`` don't burn a slot — forcing a second chunk
+    of an article that is already in the context adds nothing.
     """
-    kept_ids = {rc.chunk.id for rc in kept}
-    seen_docs: set[str] = set()
+    seen_docs = {rc.chunk.document_id for rc in kept}
     forced: list[RetrievedChunk] = []
     for rc in latest:
         if len(forced) >= slots:
             break
-        if rc.chunk.id in kept_ids or rc.chunk.document_id in seen_docs:
+        if rc.chunk.document_id in seen_docs:
             continue
         seen_docs.add(rc.chunk.document_id)
         forced.append(rc)
     if not forced:
         return kept[:top_k]
     return (forced + kept)[:top_k]
+
+
+def _cap_per_document(
+    ranked: list[RetrievedChunk], max_per_document: int
+) -> list[RetrievedChunk]:
+    """Keep rank order but allow at most ``max_per_document`` chunks per document.
+
+    A long article can have a dozen chunks that all score well against the
+    query; without a cap they fill the whole context and every other source —
+    the second announcement, the video transcript — is dropped. ``0`` disables.
+    """
+    if max_per_document <= 0:
+        return ranked
+    counts: dict[str, int] = {}
+    kept: list[RetrievedChunk] = []
+    for rc in ranked:
+        doc_id = rc.chunk.document_id
+        if counts.get(doc_id, 0) >= max_per_document:
+            continue
+        counts[doc_id] = counts.get(doc_id, 0) + 1
+        kept.append(rc)
+    return kept
 
 
 def _expand_with_entities(query: str, entities: list[str]) -> str:
@@ -242,9 +264,9 @@ class HybridRetriever:
         )
 
         # --- rerank fused head --------------------------------------------- #
-        # For recency-sensitive queries ("next", "latest", "upcoming") keep ALL
-        # reranked candidates so the recency blend below can promote fresh
-        # articles that pure semantic relevance would cut from the top-k.
+        # Every candidate is scored (the cross-encoder prices all pairs anyway);
+        # the top-k cut happens only after the recency blend and the
+        # per-document diversity cap below have had their say.
         rerank_input = fused[: min(len(fused), candidate_k)]
         if analysis.recency_sensitive and len(results) > 2:
             # Guarantee fresh-slice hits a rerank slot: RRF ordering favours
@@ -256,20 +278,20 @@ class HybridRetriever:
                     if rc.chunk.id not in in_input:
                         rerank_input.append(rc)
                         in_input.add(rc.chunk.id)
-        rerank_k = (
-            len(rerank_input) if analysis.recency_sensitive
-            else self._settings.final_top_k
-        )
-        reranked = await self._reranker.rerank(query, rerank_input, rerank_k)
+        top_k = self._settings.final_top_k
+        reranked = await self._reranker.rerank(query, rerank_input, len(rerank_input))
 
         if analysis.recency_sensitive and reranked:
-            reranked = _blend_recency(reranked)[: self._settings.final_top_k]
+            reranked = _blend_recency(reranked)
 
         # --- score floor (never empty if anything survived rerank) --------- #
         min_score = self._settings.min_rerank_score
         kept = [rc for rc in reranked if rc.final_score >= min_score]
         if not kept and reranked:
             kept = reranked[:1]
+
+        # --- source diversity, then the top-k cut --------------------------- #
+        kept = _cap_per_document(kept, self._settings.max_chunks_per_document)[:top_k]
 
         # --- guaranteed entity/latest slice --------------------------------- #
         # Two query shapes systematically defeat similarity ranking:

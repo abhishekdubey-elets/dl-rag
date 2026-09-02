@@ -83,6 +83,10 @@ class Settings(BaseSettings):
     # even for relevant pairs, so the floor is disabled by default; only set a
     # real value after calibrating against your reranker's score distribution.
     min_rerank_score: float = -1_000_000.0
+    # Source diversity: at most this many chunks of one document in the final
+    # context (0 = unlimited). Stops a single long article from filling every
+    # slot and crowding out other articles / video transcripts.
+    max_chunks_per_document: int = 3
     context_max_tokens: int = 6000
 
     # --- LLM (OpenAI-compatible) ---
