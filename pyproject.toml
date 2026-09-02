@@ -58,6 +58,13 @@ prometheus-client = "^0.21.0"
 tenacity = "^9.0.0"
 orjson = "^3.10.11"
 
+[tool.poetry.group.nlp.dependencies]
+# Statistical NER for knowledge-graph speaker extraction. The Docker image
+# installs this layer; locally use `poetry install --with nlp`. Without it the
+# extractor falls back to gazetteer + honorific person detection.
+spacy = ">=3.8,<3.9"
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+
 [tool.poetry.group.ocr.dependencies]
 # Install with `poetry install --with ocr` — requires the `tesseract` and `poppler` system binaries.
 pytesseract = "^0.3.13"

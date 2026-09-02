@@ -113,6 +113,10 @@ poetry run uvicorn dl_rag.main:app --reload
 > First start downloads the embedding + reranker models (hundreds of MB). Set
 > `EMBEDDING_MODEL` / `RERANKER_MODEL` to the small dev defaults for speed, or the
 > `bge-large` / `bge-reranker-large` pair for best quality.
+>
+> Knowledge-graph speaker extraction uses spaCy (`en_core_web_sm`). The Docker
+> image ships it; locally add it with `poetry install --with nlp`. Without it,
+> extraction falls back to the gazetteer + honorific person detector.
 
 ---
 

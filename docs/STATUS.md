@@ -38,7 +38,7 @@ _Last updated: 2026-07-11._
 | Ingestion pipeline (orchestrator) | ✅ Solid | Idempotent per-document: replace chunks + vectors, upsert doc, feed KG. |
 | **WordPress crawler** | ✅ Validated live | Verified against the live site 2026-07-11: URL discovery works (REST API + sitemaps) and extraction was clean on sampled pages (title/type/author/date/markdown all correct). Caveat: sampled pages were recent; very old (2005-era) pages may still need selector checks if extraction-quality issues show up in `pages_failed`. |
 | PDF / OCR | ⚠️ Optional deps | pypdf + pdfplumber wired; OCR fallback requires `tesseract` + `poppler` binaries (`poetry install --with ocr`, uncomment Dockerfile lines). |
-| Knowledge graph | ✅ Solid for scope | Gazetteer + trigger-phrase relation extraction (high precision, modest recall). Statistical NER (spaCy) is optional and off unless installed. |
+| Knowledge graph | ✅ Solid for scope | Gazetteer + trigger-phrase relation extraction (high precision, modest recall) + spaCy `en_core_web_sm` person/org NER (baked into the Docker image since 2026-09-02; `poetry install --with nlp` locally). Falls back to gazetteer + honorifics if spaCy is absent. |
 | Evaluation harness | ✅ Solid | Deterministic metrics always; LLM-as-judge (faithfulness/groundedness) when an LLM is reachable. Seed dataset in `eval/questions.json` — extend with gold URLs after first ingest. |
 | Docker / compose / CI | ✅ Written | Compose stack + healthchecks; CI lints, compiles, tests with service containers. `poetry.lock` should be generated (`poetry lock`) on first install. |
 | Alembic migrations | ⚠️ Recommended next | Schema is created via `Database.create_all()` (fine for first deploy). Generate an Alembic baseline before the schema evolves in production. |
